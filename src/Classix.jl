@@ -30,15 +30,27 @@ function classix(data::Matrix{Float64}; radius::Float64=0.2, minPts::Int=1, merg
     #   https://arxiv.org/abs/2202.01456
     #
     
-    (x, u, ind, half_r2, half_nrm2, scl, U), t1_prepare = @timed prepare(data, radius)
-     
-    (label, gc, gs, dist, group_label), t2_aggregate = @timed aggregate(x, u, half_r2, half_nrm2, radius)
+    tic = time()
+    x, u, ind, half_r2, half_nrm2, scl, U = prepare(data, radius)
+    toc = time()
+    t1_prepare = toc-tic
 
-    (cs, gc_label, gc_half_nrm2), t3_merge = @timed merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
+    tic = time()
+    label, gc, gs, dist, group_label = aggregate(x, u, half_r2, half_nrm2, radius)
+    toc = time()
+    t2_aggregate = toc - tic
+
+    tic = time()
+    cs, gc_label, gc_half_nrm2 = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
+    toc = time()
+    t3_merge = toc - tic
     
     # At this point we have consecutive cluster gc_label (values 1,2,3,...) for each group center, 
     # and cs contains the total number of points for each cluster label.
-    _, t4_minPts = @timed min_pts!(label, gc, gs, cs, gc_label, gc_half_nrm2, ind, group_label, minPts)
+    tic = time()
+    min_pts!(label, gc, gs, cs, gc_label, gc_half_nrm2, ind, group_label, minPts)
+    toc = time()
+    t4_minPts = toc - tic
     
     out = (;cs, dist, gc, scl, t1_prepare, t2_aggregate, t3_merge, t4_minPts)
 
@@ -46,7 +58,6 @@ function classix(data::Matrix{Float64}; radius::Float64=0.2, minPts::Int=1, merg
 
     return label, explain, out
 end
-
 
 function prepare(data::Matrix{Float64}, radius::Float64)
     size(data,1) < size(data,2) && warn("Fewer data points than features. Check that each row corresponds to a data point.")
@@ -58,10 +69,10 @@ function prepare(data::Matrix{Float64}, radius::Float64)
     scl == 0.0 && (scl = 1.0) # prevent zero division
     x ./= scl
     
-    U = similar(x, size(x,2), 2)
+    U = similar(data, size(x,2), 2)
     if size(x,1) > 5000    # SVDS / SVD
-        S = Vector{Float64}(undef,2)
-        U, S .= svds(x', nsv=2)::Tuple{SVD{Float64, Float64, Matrix{Float64}, Vector{Float64}}, Int64, Int64, Int64, Vector{Float64}}[1][1:2] # indicate type for compiler
+        S = similar(data,2)
+        U, S .= svds(x', nsv=2)
         U .*= S'
     else    # PCA via eigenvalues (faster & we don't need high accuracy)
         if size(x,1)==1
