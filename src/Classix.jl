@@ -71,9 +71,8 @@ function prepare(data::Matrix{Float64}, radius::Float64)
     
     U = similar(data, size(x,2), 2)
     if size(x,1) > 5000    # SVDS / SVD
-        S = similar(data,2)
-        U, S .= svds(x', nsv=2)
-        U .*= S'
+        USVt = svds(x', nsv=2)[1]
+        U .= USVt.U .* USVt.S'
     else    # PCA via eigenvalues (faster & we don't need high accuracy)
         if size(x,1)==1
             U[:,1] .= x'
@@ -144,7 +143,7 @@ function merge_groups(x::Matrix{Float64}, label::Vector{Int}, gc::Vector{Int}, g
         rhs = (1.5*radius)^2/2 - gc_half_nrm2[i]  # rhs of norm ineq.
     
         # get id = (norm.(eachcol(xi - gc_x)) ≤ 1.5*radius); and igore id's < i
-        id = ((gc_half_nrm2 .- @views gc_x'*xi) .≤ rhs)
+        id = ((gc_half_nrm2 .- gc_x'*xi) .≤ rhs)
         id[1:i-1] .= 0
 
         !merge_tiny_groups && (id .&= (gs .≥ minPts)) # tiny groups are not merged into larger ones
@@ -191,7 +190,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
             xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
             
             #d = gc_half_nrm2 - xi'*gc_x + gc_half_nrm2(iii); # half squared distance to all groups
-            d .= @views gc_half_nrm2 .- xi'*gc_x                      # don't need the constant term
+            d .= gc_half_nrm2 .- xi'*gc_x                      # don't need the constant term
             
             o = sortperm(d)      # indices of group centers ordered by distance from gc_x(:,iii)
             for j ∈ o         # go through all of them in order and stop when a sufficiently large group has been found
