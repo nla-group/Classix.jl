@@ -230,4 +230,7 @@ function explain_fun(x::Matrix{Float64}, label::Vector{Int}, group_label::Vector
     return "Explain function not implemented yet."
 end
 
+# precompile:
+classix(randn(5,3))
+
 end # module
