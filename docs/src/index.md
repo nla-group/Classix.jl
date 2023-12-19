@@ -2,13 +2,12 @@
 
 [![License: MIT](https://anaconda.org/conda-forge/classixclustering/badges/license.svg)](https://github.com/nla-group/classix/blob/master/LICENSE)
 
-__classix.jl__ is Julia package for clustering algorithm  __CLASSIX__. __CLASSIX__ is a fast, memory-efficient, and explainable clustering algorithm. Here are a few highlights:
+__classix.jl__ is Julia package for clustering. It is based on __CLASSIX__, a fast, memory-efficient, and explainable clustering algorithm. Here are a few highlights:
 
 - Ability to cluster low and high-dimensional data of arbitrary shape efficiently
 - Ability to detect and deal with outliers in the data
+- non-iterative and 100% deterministic
 - Ability to provide textual and visual explanations for the clusters
-- Full reproducibility of all tests in the accompanying paper
-- Support of Cython compilation
 
 __CLASSIX__ is a contrived acronym of *CLustering by Aggregation with Sorting-based Indexing* and the letter *X* for *explainability*. 
 
@@ -17,7 +16,7 @@ __CLASSIX__ is a contrived acronym of *CLustering by Aggregation with Sorting-ba
 __classix.jl__ is registered Julia package, one can simply install via:
 
 ```julia
-pkg> add ABBAj
+pkg> add classix.jl
 ```
 
 ##   Quick start
@@ -43,11 +42,12 @@ labels, explain, out = classix(data, radius=0.2, minPts=1, merge_tiny_groups=tru
 ```
 
 
-## Contribution
+## Contributions
+
 Any form of contribution is welcome. We particularly welcome the contribution of new `demos` in the form of Jupyter Notebooks. Feel free to post issues and pull requests if you want to assist in documentation or code. To contribute, please fork the project and pull a request for your changes. We will strive to work through any issues and requests and get your code merged into the main branch. Contributors will be acknowledged in the release notes. 
 
 
 
-### Reference
+### References
 
-Xinye, C., Güttel, S. Fast and explainable clustering based on sorting. arXiv:2202.01456, 1–25 (2022). https://arxiv.org/abs/2202.01456
+Xinye, C., Güttel, S. Fast and explainable clustering based on sorting. arXiv:2202.01456, pages 1–25 (2022). https://arxiv.org/abs/2202.01456
