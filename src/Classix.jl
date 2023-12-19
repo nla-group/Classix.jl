@@ -7,29 +7,29 @@ using SparseArrays: spzeros, sparse, issparse
 
 export classix
 
-function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)
-    # CLASSIX - Fast and explainable clustering based on sorting.
-    #
-    # inputs   * data - a matrix in which each row is a data point
-    #          * radius - (hyperparameter) gives a scale to the desired clusters
-    #          * minPts - (hyperparameter) minimum number of points in a cluster
-    #          * merge_tiny_groups - boolean
-    #
-    # returns  * cluster labels of the data
-    #          * function to explain the clustering
-    #          * out - a named tuple with fields
-    #                .cs    -  cluster size (#points in each cluster)
-    #                .dist  -  #distance computations during aggregation
-    #                .gc    -  group center indices 
-    #                .scl   -  data scaling parameter
-    #                .t1... -  timings of CLASSIX's phases (in seconds)
-    #
-    # This is a Julia implementation of the CLASSIX clustering algorithm:
-    #   X. Chen & S. Güttel. Fast and explainable clustering based on sorting. 
-    #   Technical Report arXiv:2202.01456, arXiv, 2022. 
-    #   https://arxiv.org/abs/2202.01456
-    #
+"""
+ CLASSIX - Fast and explainable clustering based on sorting.
     
+     inputs   * data - a matrix in which each row is a data point
+              * radius - (hyperparameter) gives a scale to the desired clusters
+              * minPts - (hyperparameter) minimum number of points in a cluster
+              * merge_tiny_groups - boolean
+    
+     returns  * cluster labels of the data
+              * function to explain the clustering
+              * out - a named tuple with fields
+                    .cs    -  cluster size (#points in each cluster)
+                    .dist  -  #distance computations during aggregation
+                    .gc    -  group center indices 
+                    .scl   -  data scaling parameter
+                    .t1... -  timings of CLASSIX's phases (in seconds)
+
+   This is a Julia implementation of the CLASSIX clustering algorithm:
+   X. Chen & S. Güttel. Fast and explainable clustering based on sorting. 
+   Technical Report arXiv:2202.01456, arXiv, 2022. 
+   https://arxiv.org/abs/2202.01456
+"""
+function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)    
     size(data,1) < size(data,2) && @warn("Fewer data points than features. Check that each row corresponds to a data point.")
     size(data,2) > 5000 && @warn("More than 5000 features. Consider applying some dimension reduction first.")
 
@@ -45,8 +45,6 @@ function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int
     cs, gc_label, gc_x, gc_half_nrm2 = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
     t3_merge = time() - tic
     
-    # At this point we have consecutive cluster gc_label (values 1,2,3,...) for each group center, 
-    # and cs contains the total number of points for each cluster label.
     tic = time()
     min_pts!(label, gc, gs, cs, gc_label, gc_x, gc_half_nrm2, ind, group_label, minPts)
     t4_minPts = time() - tic
@@ -169,6 +167,9 @@ function merge_groups(x::AbstractMatrix{Float64}, label::Vector{Int}, gc::Vector
 end
 
 function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_x::AbstractMatrix{Float64}, gc_half_nrm2::AbstractVector{Float64}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
+    # At this point we have consecutive cluster gc_label (values 1,2,3,...) for each group center, 
+    # and cs contains the total number of points for each cluster label.
+    #
     # Now eliminate tiny clusters by reassigning each of the constituting groups
     # to the nearest group belonging to a cluster with at least minPts points. 
     # This means, we are potentially dissolving tiny clusters, reassigning groups 
