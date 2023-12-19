@@ -2,7 +2,7 @@
 Fast and explainable clustering in Julia.
 
 Basic usage:
-```
+```julia
 using Classix
 
 data = [8.0391 11.3790 9.7221;
