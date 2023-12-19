@@ -13,7 +13,7 @@ __CLASSIX__ is a contrived acronym of *CLustering by Aggregation with Sorting-ba
 
 ## Install
 
-__classix.jl__ is registered Julia package, one can simply install via:
+Once __classix.jl__ is a registered Julia package, one can simply install it via:
 
 ```julia
 pkg> add classix.jl
