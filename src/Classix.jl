@@ -2,12 +2,12 @@ module Classix
 
 using LinearAlgebra: norm, eigen, Symmetric, dot 
 using Statistics: mean, median
-using Arpack: svds
-using SparseArrays: spzeros
+using TSVD: tsvd
+using SparseArrays: spzeros, sparse, issparse
 
 export classix
 
-function classix(data::Matrix{Float64}; radius::Float64=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)
+function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)
     # CLASSIX - Fast and explainable clustering based on sorting.
     #
     # inputs   * data - a matrix in which each row is a data point
@@ -30,27 +30,26 @@ function classix(data::Matrix{Float64}; radius::Float64=0.2, minPts::Int=1, merg
     #   https://arxiv.org/abs/2202.01456
     #
     
+    size(data,1) < size(data,2) && @warn("Fewer data points than features. Check that each row corresponds to a data point.")
+    size(data,2) > 5000 && @warn("More than 5000 features. Consider applying some dimension reduction first.")
+
     tic = time()
     x, u, ind, half_r2, half_nrm2, scl, U = prepare(data, radius)
-    toc = time()
-    t1_prepare = toc-tic
+    t1_prepare = time()-tic
 
     tic = time()
     label, gc, gs, dist, group_label = aggregate(x, u, half_r2, half_nrm2, radius)
-    toc = time()
-    t2_aggregate = toc - tic
+    t2_aggregate = time() - tic
 
     tic = time()
-    cs, gc_label, gc_half_nrm2 = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
-    toc = time()
-    t3_merge = toc - tic
+    cs, gc_label, gc_x, gc_half_nrm2 = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
+    t3_merge = time() - tic
     
     # At this point we have consecutive cluster gc_label (values 1,2,3,...) for each group center, 
     # and cs contains the total number of points for each cluster label.
     tic = time()
-    min_pts!(label, gc, gs, cs, gc_label, gc_half_nrm2, ind, group_label, minPts)
-    toc = time()
-    t4_minPts = toc - tic
+    min_pts!(label, gc, gs, cs, gc_label, gc_x, gc_half_nrm2, ind, group_label, minPts)
+    t4_minPts = time() - tic
     
     out = (;cs, dist, gc, scl, t1_prepare, t2_aggregate, t3_merge, t4_minPts)
 
@@ -59,26 +58,23 @@ function classix(data::Matrix{Float64}; radius::Float64=0.2, minPts::Int=1, merg
     return label, explain, out
 end
 
-function prepare(data::Matrix{Float64}, radius::Float64)
-    size(data,1) < size(data,2) && warn("Fewer data points than features. Check that each row corresponds to a data point.")
-    size(data,2) > 5000 && warn("More than 5000 features. Consider applying some dimension reduction first.")
-    
-    x = collect(data')  # transpose. much faster when data points are stored column-wise
+function prepare(data::AbstractMatrix{Float64}, radius::Float64)
+    x = permutedims(data)  # transpose. much faster when data points are stored column-wise
     x .-= mean(x, dims=2)
     scl = median(norm.(eachcol(x)))
     scl == 0.0 && (scl = 1.0) # prevent zero division
     x ./= scl
     
-    U = similar(data, size(x,2), 2)
-    if size(x,1) > 5000    # SVDS / SVD
-        USVt = svds(x', nsv=2)[1]
-        U .= USVt.U .* USVt.S'
+    if size(x,1) > 1000 || issparse(x)  # tSVD / SVD
+        U,S,_ = tsvd(x', 2)
+        U .*= S'
     else    # PCA via eigenvalues (faster & we don't need high accuracy)
+        U = Matrix{Float64}(undef, size(x,2), 2)
         if size(x,1)==1
             U[:,1] .= x'
             U[:,2] .= 0
         else
-            xtx = Symmetric(x*x')
+            xtx = Symmetric(collect(x*x'))
             d,V = eigen(xtx)
             i = sortperm(d, by=abs, rev=true)
             U .= x'*V[:,i[1:2]]
@@ -90,28 +86,28 @@ function prepare(data::Matrix{Float64}, radius::Float64)
     u = U[:,1]                    # scores
     ind = sortperm(u)
     u .= u[ind]
-    x = x[:,ind]
+    x .= x[:,ind]
     half_r2 = radius^2/2
-    half_nrm2 = sum(x.^2,dims=1)./2   # ,1 needed for 1-dim feature
+    half_nrm2 = vec(sum(x.^2,dims=1))./2   # ,1 needed for 1-dim feature
 
     return x, u, ind, half_r2, half_nrm2, scl, U
 end
 
-function aggregate(x::Matrix{Float64}, u::Vector{Float64}, half_r2::Float64, half_nrm2::Matrix{Float64}, radius::Float64)
+function aggregate(x::AbstractMatrix{Float64}, u::Vector{Float64}, half_r2::Float64, half_nrm2::Vector{Float64}, radius::Float64)
     n = size(x,2)
     label = zeros(Int, n)
     lab = 1
     dist = 0    # no. distances comput.
     gc = Int[]     # indices of group centers (in sorted array)
     gs = Int[]     # group size
-    for i = 1:n
+    for i ∈ 1:n
         label[i] > 0 && continue
         label[i] = lab
         push!(gc,i)
         push!(gs,1)
         rhs = half_r2 - half_nrm2[i] # right-hand side of norm ineq.
     
-        for j = i+1:n
+        for j ∈ i+1:n
             label[j] > 0 && continue
             u[j] - u[i] > radius && break # early termination (uj - ui > radius)
             dist += 1
@@ -128,10 +124,10 @@ function aggregate(x::Matrix{Float64}, u::Vector{Float64}, half_r2::Float64, hal
     return label, gc, gs, dist, group_label
 end
 
-function merge_groups(x::Matrix{Float64}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Matrix{Float64}, radius::Float64, minPts::Int, merge_tiny_groups::Bool)
-    gc_x = x[:,gc]
+function merge_groups(x::AbstractMatrix{Float64}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Vector{Float64}, radius::Float64, minPts::Int, merge_tiny_groups::Bool)
+    gc_x = view(x,:,gc)
     gc_label = label[gc]  # will be [1,2,3,...]
-    gc_half_nrm2 = half_nrm2[gc]
+    gc_half_nrm2 = view(half_nrm2,gc)
     A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
     
     for i ∈ eachindex(gc)
@@ -162,17 +158,17 @@ function merge_groups(x::Matrix{Float64}, label::Vector{Int}, gc::Vector{Int}, g
     end
 
     # rename labels to be 1,2,3,... and determine cluster sizes
-    ul = sort!(unique(gc_label))
+    ul = unique(gc_label)
     cs = zeros(Int, length(ul))
     for i ∈ eachindex(ul)
         id = (gc_label .== ul[i])
         gc_label[id] .= i
         cs[i] = sum(gs[id]) # cluster size = sum of all group sizes that form cluster
     end
-    return cs, gc_label, gc_half_nrm2
+    return cs, gc_label, gc_x, gc_half_nrm2
 end
 
-function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_half_nrm2::Vector{Float64}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
+function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_x::AbstractMatrix{Float64}, gc_half_nrm2::AbstractVector{Float64}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
     # Now eliminate tiny clusters by reassigning each of the constituting groups
     # to the nearest group belonging to a cluster with at least minPts points. 
     # This means, we are potentially dissolving tiny clusters, reassigning groups 
@@ -180,21 +176,21 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     #
     # ! This function modifies label, gc, cs and gc_label !
     
-    id = cs[cs .< minPts]   # cluster labels with small number of total points
+    id = findall(cs .< minPts)   # cluster labels with small number of total points
     copy_gc_label = gc_label # added by Xinye (gc_label's before reassignment of tiny groups)
     d = zeros(length(gc_half_nrm2))
-   
+
     for i ∈ id
-        ii = i[copy_gc_label .== i] # find all tiny groups with that label
+        ii = findall(copy_gc_label .== i) # find all tiny groups with that label
         for iii ∈ ii
             xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
             
-            #d = gc_half_nrm2 - xi'*gc_x + gc_half_nrm2(iii); # half squared distance to all groups
-            d .= gc_half_nrm2 .- xi'*gc_x                      # don't need the constant term
+            #d = gc_half_nrm2 - gc_x'*xi + gc_half_nrm2[iii]   # half squared distance to all groups
+            d .= gc_half_nrm2 .- gc_x'*xi                      # don't need the constant term
             
-            o = sortperm(d)      # indices of group centers ordered by distance from gc_x(:,iii)
+            o = sortperm(d)      # indices of group centers ordered by distance from xi
             for j ∈ o         # go through all of them in order and stop when a sufficiently large group has been found
-                if cs[copy_gc_label[j]] >= minPts
+                if cs[copy_gc_label[j]] ≥ minPts
                     gc_label[iii] = copy_gc_label[j]
                     break
                 end
@@ -205,6 +201,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     # rename labels to be 1,2,3,... and determine cluster sizes again
     # needs to be redone because the tiny groups have now disappeared
     ul = unique(gc_label)
+    resize!(cs,length(ul))
     cs .= 0
     for i ∈ eachindex(ul)
         id = (gc_label .== ul[i])
@@ -225,11 +222,13 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     return nothing
 end
 
-function explain_fun(x::Matrix{Float64}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{Float64}, out, radius::Float64, minPts::Int)
+function explain_fun(x::AbstractMatrix{Float64}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{Float64}, out, radius::Float64, minPts::Int)
     return "Explain function not implemented yet."
 end
 
 # precompile:
-classix(randn(5,3))
+data = randn(5,3)
+classix(data)
+classix(sparse(data))
 
 end # module
