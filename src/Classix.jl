@@ -4,6 +4,7 @@ using LinearAlgebra: norm, eigen, Symmetric, dot
 using Statistics: mean, median
 using TSVD: tsvd
 using SparseArrays: spzeros, sparse, issparse
+using GenericLinearAlgebra: svd
 
 export classix
 
@@ -29,7 +30,7 @@ export classix
    Technical Report arXiv:2202.01456, arXiv, 2022. 
    https://arxiv.org/abs/2202.01456
 """
-function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)    
+function classix(data::AbstractMatrix{<:AbstractFloat}; radius::AbstractFloat=0.2, minPts::Int=1, merge_tiny_groups::Bool=true)    
     size(data,1) < size(data,2) && @warn("Fewer data points than features. Check that each row corresponds to a data point.")
     size(data,2) > 5000 && @warn("More than 5000 features. Consider applying some dimension reduction first.")
 
@@ -56,27 +57,30 @@ function classix(data::AbstractMatrix{Float64}; radius::Float64=0.2, minPts::Int
     return label, explain, out
 end
 
-function prepare(data::AbstractMatrix{Float64}, radius::Float64)
+function prepare(data::AbstractMatrix{<:AbstractFloat}, radius::AbstractFloat)
     x = permutedims(data)  # transpose. much faster when data points are stored column-wise
     x .-= mean(x, dims=2)
     scl = median(norm.(eachcol(x)))
     scl == 0.0 && (scl = 1.0) # prevent zero division
     x ./= scl
     
-    if size(x,1) > 1000 || issparse(x)  # tSVD / SVD
-        U,S,_ = tsvd(x', 2)
-        U .*= S'
-    else    # PCA via eigenvalues (faster & we don't need high accuracy)
-        U = Matrix{Float64}(undef, size(x,2), 2)
-        if size(x,1)==1
-            U[:,1] .= x'
-            U[:,2] .= 0
-        else
+    if size(x,1)==1
+        U = Matrix{eltype(data)}(undef, size(x,2), 2)
+        U[:,1] .= x'
+        U[:,2] .= 0
+    elseif eltype(x) <: Union{Float32, Float64} # standard libraries only work for doulble and single
+        if size(x,1) > 1000 || issparse(x)
+            U,S,_ = tsvd(x', 2)
+            U .*= S'
+        else # PCA via eigenvalues (faster & we don't need high accuracy)
             xtx = Symmetric(collect(x*x'))
             d,V = eigen(xtx)
             i = sortperm(d, by=abs, rev=true)
-            U .= x'*V[:,i[1:2]]
+            U = x'*view(V,:,i[1:2])
         end
+    else # use GenericLinearAlgebra if type of x is too unusual
+        USVt = svd(collect(x'))
+        U = @views USVt.U[:,1:2] .* USVt.S[1:2]'
     end
     
     U[:,1] .*= sign(-U[1,1]) # flip to enforce deterministic output
@@ -91,7 +95,7 @@ function prepare(data::AbstractMatrix{Float64}, radius::Float64)
     return x, u, ind, half_r2, half_nrm2, scl, U
 end
 
-function aggregate(x::AbstractMatrix{Float64}, u::Vector{Float64}, half_r2::Float64, half_nrm2::Vector{Float64}, radius::Float64)
+function aggregate(x::AbstractMatrix{<:AbstractFloat}, u::Vector{<:AbstractFloat}, half_r2::AbstractFloat, half_nrm2::Vector{<:AbstractFloat}, radius::AbstractFloat)
     n = size(x,2)
     label = zeros(Int, n)
     lab = 1
@@ -122,7 +126,7 @@ function aggregate(x::AbstractMatrix{Float64}, u::Vector{Float64}, half_r2::Floa
     return label, gc, gs, dist, group_label
 end
 
-function merge_groups(x::AbstractMatrix{Float64}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Vector{Float64}, radius::Float64, minPts::Int, merge_tiny_groups::Bool)
+function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Vector{<:AbstractFloat}, radius::AbstractFloat, minPts::Int, merge_tiny_groups::Bool)
     gc_x = view(x,:,gc)
     gc_label = label[gc]  # will be [1,2,3,...]
     gc_half_nrm2 = view(half_nrm2,gc)
@@ -166,7 +170,7 @@ function merge_groups(x::AbstractMatrix{Float64}, label::Vector{Int}, gc::Vector
     return cs, gc_label, gc_x, gc_half_nrm2
 end
 
-function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_x::AbstractMatrix{Float64}, gc_half_nrm2::AbstractVector{Float64}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
+function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_x::AbstractMatrix{<:AbstractFloat}, gc_half_nrm2::AbstractVector{<:AbstractFloat}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
     # At this point we have consecutive cluster gc_label (values 1,2,3,...) for each group center, 
     # and cs contains the total number of points for each cluster label.
     #
@@ -223,7 +227,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     return nothing
 end
 
-function explain_fun(x::AbstractMatrix{Float64}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{Float64}, out, radius::Float64, minPts::Int)
+function explain_fun(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{<:AbstractFloat}, out, radius::Float64, minPts::Int)
     return "Explain function not implemented yet."
 end
 
@@ -231,5 +235,8 @@ end
 data = randn(5,3)
 classix(data)
 classix(sparse(data))
+classix(big.(data))
+classix(Float32.(data))
+classix(Float16.(data))
 
 end # module
