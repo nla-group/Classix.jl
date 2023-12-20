@@ -127,9 +127,11 @@ function aggregate(x::AbstractMatrix{<:AbstractFloat}, u::Vector{<:AbstractFloat
 end
 
 function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Vector{<:AbstractFloat}, radius::AbstractFloat, minPts::Int, merge_tiny_groups::Bool)
-    gc_x = view(x,:,gc)
+    #gc_x = view(x,:,gc)
+    gc_x = x[:,gc] # faster
     gc_label = label[gc]  # will be [1,2,3,...]
-    gc_half_nrm2 = view(half_nrm2,gc)
+    #gc_half_nrm2 = view(half_nrm2,gc)
+    gc_half_nrm2 = half_nrm2[gc] # faster
     A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
     
     for i ∈ eachindex(gc)
@@ -137,7 +139,8 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
             continue
         end
     
-        xi = view(gc_x,:,i)      # current group center coordinate
+        #xi = view(gc_x,:,i)      # current group center coordinate
+        xi = gc_x[:,i]
         rhs = (1.5*radius)^2/2 - gc_half_nrm2[i]  # rhs of norm ineq.
     
         # get id = (norm.(eachcol(xi - gc_x)) ≤ 1.5*radius); and igore id's < i
@@ -188,7 +191,8 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     for i ∈ id
         ii = findall(copy_gc_label .== i) # find all tiny groups with that label
         for iii ∈ ii
-            xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
+            #xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
+            xi = gc_x[:,iii]
             
             #d = gc_half_nrm2 - gc_x'*xi + gc_half_nrm2[iii]   # half squared distance to all groups
             d .= gc_half_nrm2 .- gc_x'*xi                      # don't need the constant term
