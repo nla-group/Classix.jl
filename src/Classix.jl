@@ -151,7 +151,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
       
         A[id,i] .= 1 # adjacency, keep track of merged groups 
     
-        gcl = unique(gc_label[id]) # get all the affected group center labels
+        gcl = unique(sort(gc_label[id])) # get all the affected group center labels
         # TODO: could speedup unique by exploiting sorting?
     
         minlab = minimum(gcl)
@@ -163,7 +163,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
     end
 
     # rename labels to be 1,2,3,... and determine cluster sizes
-    ul = unique(gc_label)
+    ul = unique(sort(gc_label))
     cs = zeros(Int, length(ul))
     for i ∈ eachindex(ul)
         id = (gc_label .== ul[i])
@@ -209,7 +209,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
 
     # rename labels to be 1,2,3,... and determine cluster sizes again
     # needs to be redone because the tiny groups have now disappeared
-    ul = unique(gc_label)
+    ul = unique(sort(gc_label))
     resize!(cs,length(ul))
     cs .= 0
     for i ∈ eachindex(ul)
