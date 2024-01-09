@@ -127,12 +127,12 @@ function aggregate(x::AbstractMatrix{<:AbstractFloat}, u::Vector{<:AbstractFloat
 end
 
 function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, half_nrm2::Vector{<:AbstractFloat}, radius::AbstractFloat, minPts::Int, merge_tiny_groups::Bool)
-    #gc_x = view(x,:,gc)
+    #OLD: gc_x = view(x,:,gc)
     gc_x = x[:,gc] # faster
     gc_label = label[gc]  # will be [1,2,3,...]
-    #gc_half_nrm2 = view(half_nrm2,gc)
+    # OLD: gc_half_nrm2 = view(half_nrm2,gc)
     gc_half_nrm2 = half_nrm2[gc] # faster
-    # A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
+    # OLD: A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
     est_adj_nnz = 10*length(gc) # estimated number of nonzero elements in adjacancy of group centres
     I = Vector{Int}(undef,est_adj_nnz) # preallocated storage for adjacancy of group centres
     J = Vector{Int}(undef,est_adj_nnz) # preallocated storage for adjacancy of group centres
@@ -143,7 +143,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
             continue
         end
     
-        #xi = view(gc_x,:,i)      # current group center coordinate
+        # OLD: xi = view(gc_x,:,i)      # current group center coordinate
         xi = gc_x[:,i]
         rhs = (1.5*radius)^2/2 - gc_half_nrm2[i]  # rhs of norm ineq.
     
@@ -153,7 +153,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
 
         !merge_tiny_groups && (id .&= (gs .≥ minPts)) # tiny groups are not merged into larger ones
       
-        # build adjacency matrix to keep track of merged groups. 
+        # Build adjacency matrix to keep track of merged groups. 
         # Later we will essentially build the matrix sparse(I,J,ones)
         for k = i:length(gc) 
             if id[k]
@@ -210,7 +210,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     for i ∈ id
         ii = findall(copy_gc_label .== i) # find all tiny groups with that label
         for iii ∈ ii
-            #xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
+            # OLD: xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
             xi = gc_x[:,iii]
             
             #d = gc_half_nrm2 - gc_x'*xi + gc_half_nrm2[iii]   # half squared distance to all groups
