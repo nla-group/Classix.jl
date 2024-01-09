@@ -43,7 +43,7 @@ function classix(data::AbstractMatrix{<:AbstractFloat}; radius::AbstractFloat=0.
     t2_aggregate = time() - tic
 
     tic = time()
-    cs, gc_label, gc_x, gc_half_nrm2 = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
+    cs, gc_label, gc_x, gc_half_nrm2, A = merge_groups(x, label, gc, gs, half_nrm2, radius, minPts, merge_tiny_groups)
     t3_merge = time() - tic
     
     tic = time()
@@ -52,7 +52,7 @@ function classix(data::AbstractMatrix{<:AbstractFloat}; radius::AbstractFloat=0.
     
     out = (;cs, dist, gc, scl, t1_prepare, t2_aggregate, t3_merge, t4_minPts)
 
-    explain = explain_fun(x, label, group_label, U, out, radius, minPts) 
+    explain = explain_fun(x, label, group_label, U, A, out, radius, minPts) 
 
     return label, explain, out
 end
@@ -68,7 +68,7 @@ function prepare(data::AbstractMatrix{<:AbstractFloat}, radius::AbstractFloat)
         U = Matrix{eltype(data)}(undef, size(x,2), 2)
         U[:,1] .= x'
         U[:,2] .= 0
-    elseif eltype(x) <: Union{Float32, Float64} # standard libraries only work for doulble and single
+    elseif eltype(x) <: Union{Float32, Float64} # standard libraries only work for double and single
         if size(x,1) > 1000 || issparse(x)
             U,S,_ = tsvd(x', 2)
             U .*= S'
@@ -132,7 +132,11 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
     gc_label = label[gc]  # will be [1,2,3,...]
     #gc_half_nrm2 = view(half_nrm2,gc)
     gc_half_nrm2 = half_nrm2[gc] # faster
-    A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
+    # A = spzeros(Bool, length(gc),length(gc)) # adjacency of group centers
+    est_adj_nnz = 10*length(gc) # estimated number of nonzero elements in adjacancy of group centres
+    I = Vector{Int}(undef,est_adj_nnz) # preallocated storage for adjacancy of group centres
+    J = Vector{Int}(undef,est_adj_nnz) # preallocated storage for adjacancy of group centres
+    curr_adj_index = 0
     
     for i ∈ eachindex(gc)
         if !merge_tiny_groups && gs[i] < minPts # tiny groups cannot take over large ones
@@ -149,7 +153,20 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
 
         !merge_tiny_groups && (id .&= (gs .≥ minPts)) # tiny groups are not merged into larger ones
       
-        A[id,i] .= 1 # adjacency, keep track of merged groups 
+        # build adjacency matrix to keep track of merged groups. 
+        # Later we will essentially build the matrix sparse(I,J,ones)
+        for k = i:length(gc) 
+            if id[k]
+                curr_adj_index += 1
+                if curr_adj_index ≤ est_adj_nnz
+                    @inbounds I[curr_adj_index] = k
+                    @inbounds J[curr_adj_index] = i
+                else
+                    push!(I,k)
+                    push!(J,i)
+                end
+            end
+        end
     
         gcl = unique(sort(gc_label[id])) # get all the affected group center labels
         # TODO: could speedup unique by exploiting sorting?
@@ -162,6 +179,8 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
                                                 # order might stay disconnected
     end
 
+    A = sparse(I[1:curr_adj_index],J[1:curr_adj_index],ones(Bool,curr_adj_index))
+
     # rename labels to be 1,2,3,... and determine cluster sizes
     ul = unique(sort(gc_label))
     cs = zeros(Int, length(ul))
@@ -170,7 +189,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
         gc_label[id] .= i
         cs[i] = sum(gs[id]) # cluster size = sum of all group sizes that form cluster
     end
-    return cs, gc_label, gc_x, gc_half_nrm2
+    return cs, gc_label, gc_x, gc_half_nrm2, A
 end
 
 function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vector{Int}, gc_label::Vector{Int}, gc_x::AbstractMatrix{<:AbstractFloat}, gc_half_nrm2::AbstractVector{<:AbstractFloat}, ind::Vector{Int}, group_label::Vector{Int}, minPts::Int)
@@ -231,7 +250,7 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     return nothing
 end
 
-function explain_fun(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{<:AbstractFloat}, out, radius::Float64, minPts::Int)
+function explain_fun(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, group_label::Vector{Int}, U::Matrix{<:AbstractFloat}, A::AbstractMatrix, out, radius::Float64, minPts::Int)
     return "Explain function not implemented yet."
 end
 
