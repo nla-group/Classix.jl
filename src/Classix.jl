@@ -103,19 +103,19 @@ function aggregate(x::AbstractMatrix{<:AbstractFloat}, u::Vector{<:AbstractFloat
     gc = Int[]     # indices of group centers (in sorted array)
     gs = Int[]     # group size
     for i ∈ 1:n
-        label[i] > 0 && continue
-        label[i] = lab
+        @inbounds label[i] > 0 && continue
+        @inbounds label[i] = lab
         push!(gc,i)
         push!(gs,1)
-        rhs = half_r2 - half_nrm2[i] # right-hand side of norm ineq.
+        @inbounds rhs = half_r2 - half_nrm2[i] # right-hand side of norm ineq.
     
         for j ∈ i+1:n
-            label[j] > 0 && continue
-            u[j] - u[i] > radius && break # early termination (uj - ui > radius)
+            @inbounds label[j] > 0 && continue
+            @inbounds u[j] - u[i] > radius && break # early termination (uj - ui > radius)
             dist += 1
-            ip = @views dot(x[:,i],x[:,j])
-            if half_nrm2[j] - ip <= rhs   # if vecnorm(xi-xj) <= radius
-                label[j] = lab
+            ip = @inbounds @views dot(x[:,i],x[:,j])
+            @inbounds if half_nrm2[j] - ip <= rhs   # if vecnorm(xi-xj) <= radius
+                @inbounds label[j] = lab
                 gs[end] += 1
             end
         end
@@ -144,7 +144,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
         end
     
         # OLD: xi = view(gc_x,:,i)      # current group center coordinate
-        xi = gc_x[:,i]
+        @inbounds xi = gc_x[:,i]
         rhs = (1.5*radius)^2/2 - gc_half_nrm2[i]  # rhs of norm ineq.
     
         # get id = (norm.(eachcol(xi - gc_x)) ≤ 1.5*radius); and igore id's < i
@@ -173,7 +173,7 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
     
         minlab = minimum(gcl)
         for L ∈ gcl
-            gc_label[gc_label .== L] .= minlab  # important: need to relabel all of them,
+            @inbounds gc_label[gc_label .== L] .= minlab  # important: need to relabel all of them,
         end                                     # not just the ones in id, as otherwise
                                                 # groups that joined out of
                                                 # order might stay disconnected
@@ -185,9 +185,9 @@ function merge_groups(x::AbstractMatrix{<:AbstractFloat}, label::Vector{Int}, gc
     ul = unique(sort(gc_label))
     cs = zeros(Int, length(ul))
     for i ∈ eachindex(ul)
-        id = (gc_label .== ul[i])
-        gc_label[id] .= i
-        cs[i] = sum(gs[id]) # cluster size = sum of all group sizes that form cluster
+        @inbounds id = (gc_label .== ul[i])
+        @inbounds gc_label[id] .= i
+        @inbounds cs[i] = sum(gs[id]) # cluster size = sum of all group sizes that form cluster
     end
     return cs, gc_label, gc_x, gc_half_nrm2, A
 end
@@ -211,15 +211,15 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
         ii = findall(copy_gc_label .== i) # find all tiny groups with that label
         for iii ∈ ii
             # OLD: xi = view(gc_x,:,iii)        # group center (starting point) of one tiny group
-            xi = gc_x[:,iii]
+            @inbounds xi = gc_x[:,iii]
             
             #d = gc_half_nrm2 - gc_x'*xi + gc_half_nrm2[iii]   # half squared distance to all groups
             d .= gc_half_nrm2 .- gc_x'*xi                      # don't need the constant term
             
             o = sortperm(d)      # indices of group centers ordered by distance from xi
             for j ∈ o         # go through all of them in order and stop when a sufficiently large group has been found
-                if cs[copy_gc_label[j]] ≥ minPts
-                    gc_label[iii] = copy_gc_label[j]
+                @inbounds if cs[copy_gc_label[j]] ≥ minPts
+                    @inbounds gc_label[iii] = copy_gc_label[j]
                     break
                 end
             end
@@ -232,9 +232,9 @@ function min_pts!(label::Vector{Int}, gc::Vector{Int}, gs::Vector{Int}, cs::Vect
     resize!(cs,length(ul))
     cs .= 0
     for i ∈ eachindex(ul)
-        id = (gc_label .== ul[i])
-        gc_label[id] .= i
-        cs[i] = sum(gs[id])
+        @inbounds id = (gc_label .== ul[i])
+        @inbounds gc_label[id] .= i
+        @inbounds cs[i] = sum(gs[id])
     end
     
     # now relabel all labels, not just group centers
